@@ -1,0 +1,167 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Pipeline Dashboard</title>
+  <style>
+    body { 
+      font-family: "Segoe UI", Arial, sans-serif; 
+      max-width: 1000px; 
+      margin: 20px auto; 
+      background-color: #0f172a; /* dark slate */
+      color: #f1f5f9; /* soft white */
+    }
+
+    h1 { 
+      margin: 0 0 20px 0; 
+      color: #38bdf8; /* cyan accent */
+      text-align: center;
+    }
+
+    .card { 
+      background: #1e293b; 
+      border: 1px solid #334155; 
+      padding: 16px; 
+      border-radius: 10px; 
+      margin-bottom: 16px; 
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    #stats { 
+      display: flex; 
+      gap: 16px; 
+      margin-bottom: 20px;
+    }
+
+    .stat { 
+      flex: 1; 
+      background: #1e293b; 
+      padding: 14px; 
+      border-radius: 10px; 
+      text-align: center;
+      border: 1px solid #334155;
+      transition: transform 0.2s ease;
+    }
+
+    .stat:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+    }
+
+    .stat h3 { 
+      margin: 0; 
+      font-size: 1.8em; 
+      color: #fbbf24; /* amber */
+    }
+
+    .stat div { 
+      font-size: 0.9em; 
+      color: #94a3b8; 
+    }
+
+    table { 
+      width: 100%; 
+      border-collapse: collapse; 
+      border-radius: 8px; 
+      overflow: hidden;
+    }
+
+    th, td { 
+      padding: 10px; 
+      text-align: left; 
+    }
+
+    thead { 
+      background: #334155; 
+      color: #e2e8f0;
+    }
+
+    tbody tr { 
+      background: #1e293b; 
+      border-bottom: 1px solid #334155;
+      transition: background 0.2s;
+    }
+
+    tbody tr:hover { 
+      background: #0f172a;
+    }
+
+    td { 
+      color: #cbd5e1; 
+    }
+
+    td:last-child { 
+      font-weight: bold;
+    }
+
+    /* Status coloring */
+    td:contains("SUCCESS") { color: #22c55e; }
+    td:contains("FAILED") { color: #ef4444; }
+  </style>
+  <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1190.0.min.js"></script>
+</head>
+<body>
+  <h1>Event Pipeline Dashboard</h1>
+  <div id="stats">
+    <div class="stat"><h3 id="processed_count">—</h3><div>Processed files</div></div>
+    <div class="stat"><h3 id="failed_count">—</h3><div>Failed files</div></div>
+    <div class="stat"><h3 id="avg_latency">—</h3><div>Avg size (bytes)</div></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:12px; color:#38bdf8;">Recent Processed Files</h3>
+    <table>
+      <thead><tr><th>FileID</th><th>ProcessedAt</th><th>Lines</th><th>SizeBytes</th><th>Status</th></tr></thead>
+      <tbody id="table_body"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // CONFIG - Replace with your values
+    const REGION = "ap-south-1";
+    const IDENTITY_POOL_ID = "ap-south-1:2e9efebd-f56f-4cd3-aa1f-33672c9990f4"; 
+    const DDB_TABLE = "ProcessedFiles";
+
+    AWS.config.update({region: REGION});
+    AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+      IdentityPoolId: IDENTITY_POOL_ID
+    });
+
+    const docClient = new AWS.DynamoDB.DocumentClient({region: REGION});
+
+    async function fetchStats() {
+      const params = { TableName: DDB_TABLE, Limit: 50 };
+      try {
+        const data = await docClient.scan(params).promise();
+        const items = data.Items || [];
+        document.getElementById('processed_count').innerText = items.filter(i => i.Status === 'SUCCESS').length;
+        document.getElementById('failed_count').innerText = items.filter(i => i.Status === 'FAILED').length;
+        const avg = items.length ? Math.round(items.reduce((s,i)=>s + (i.SizeBytes||0),0)/items.length) : 0;
+        document.getElementById('avg_latency').innerText = avg;
+
+        const tbody = document.getElementById('table_body');
+        tbody.innerHTML = "";
+        items.sort((a,b)=> (b.ProcessedAt||0) - (a.ProcessedAt||0)).slice(0,20).forEach(it => {
+          const row = `<tr>
+            <td>${it.FileID}</td>
+            <td>${new Date((it.ProcessedAt||0)*1000).toLocaleString()}</td>
+            <td>${it.Lines||'-'}</td>
+            <td>${it.SizeBytes||'-'}</td>
+            <td>${it.Status||'-'}</td>
+          </tr>`;
+          tbody.innerHTML += row;
+        });
+      } catch (err) {
+        console.error("DynamoDB error:", err);
+        alert("Dashboard error: check console for details.");
+      }
+    }
+
+    AWS.config.credentials.get(function(err){
+      if(err) { console.error("Cognito credentials error:", err); alert("Cognito init failed. See console."); return; }
+      fetchStats();
+      setInterval(fetchStats, 30*1000);
+    });
+  </script>
+</body>
+</html>

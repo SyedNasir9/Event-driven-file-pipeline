@@ -1,0 +1,164 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>File Pipeline Uploader</title>
+  <style>
+    body { 
+      font-family: "Segoe UI", Inter, Arial, sans-serif; 
+      background-color: #0f172a; 
+      color: #f1f5f9; 
+      padding: 32px; 
+      max-width: 900px; 
+      margin: auto;
+    }
+
+    h2 { 
+      color: #38bdf8; 
+      margin-bottom: 16px; 
+      text-align: center;
+    }
+
+    .card { 
+      background: #1e293b; 
+      border: 1px solid #334155; 
+      border-radius: 12px; 
+      padding: 24px; 
+      box-shadow: 0 6px 16px rgba(0,0,0,0.4); 
+      margin-bottom: 20px; 
+    }
+
+    p strong { color: #fbbf24; }
+
+    input[type="file"] { 
+      display: block; 
+      margin: 14px 0; 
+      padding: 6px; 
+      border-radius: 6px; 
+      border: 1px solid #334155; 
+      background: #0f172a; 
+      color: #f1f5f9;
+    }
+
+    .btn { 
+      display: inline-block; 
+      padding: 10px 18px; 
+      background: #38bdf8; 
+      color: #0f172a; 
+      border-radius: 8px; 
+      text-decoration: none; 
+      cursor: pointer; 
+      font-weight: 600;
+      transition: transform 0.2s ease, background 0.2s ease;
+      border: none;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      background: #0ea5e9;
+    }
+
+    #status { 
+      margin-top: 12px; 
+      font-weight: 500;
+    }
+
+    .log { 
+      font-family: monospace; 
+      background: #0f172a; 
+      color: #e6eef8; 
+      padding: 14px; 
+      border-radius: 8px; 
+      height: 200px; 
+      overflow:auto; 
+      margin-top: 16px; 
+      border: 1px solid #334155;
+    }
+
+    .log .success { color: #22c55e; } /* green */
+    .log .error { color: #ef4444; }   /* red */
+    .log .info { color: #f1f5f9; }    /* default soft white */
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>File Pipeline — Browser Uploader</h2>
+    <p>Bucket: <strong>k8s-event-files-syed</strong></p>
+    <input id="fileInput" type="file" accept=".txt,.csv,.log" />
+    <button id="uploadBtn" class="btn">Upload to S3</button>
+    <p id="status"></p>
+    <div class="log" id="log"></div>
+  </div>
+<script src="https://sdk.amazonaws.com/js/aws-sdk-2.1190.0.min.js"></script>
+<script>
+  const IDENTITY_POOL_ID = "ap-south-1:2e9efebd-f56f-4cd3-aa1f-33672c9990f4";
+  const REGION = "ap-south-1";
+  const BUCKET = "k8s-event-files-syed";
+
+  const fileInput = document.getElementById('fileInput');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const status = document.getElementById('status');
+  const log = document.getElementById('log');
+
+  function appendLog(message, type="info") {
+    const line = document.createElement("div");
+    line.className = type; 
+    line.textContent = new Date().toISOString() + " | " + message;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function getTemporaryCredentials(callback) {
+    appendLog("Requesting Cognito credentials...", "info");
+    AWS.config.region = REGION;
+    AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+      IdentityPoolId: IDENTITY_POOL_ID
+    });
+
+    AWS.config.credentials.get(function(err) {
+      if (err) {
+        appendLog("Cognito credentials error: " + err, "error");
+        console.error(err);
+        return;
+      }
+      appendLog("Got temporary credentials", "info");
+      callback();
+    });
+  }
+
+  function uploadFileWithV2() {
+    const f = fileInput.files[0];
+    if (!f) { alert("Choose a file first"); return; }
+    status.innerText = "Uploading...";
+    appendLog("Starting upload: " + f.name, "info");
+
+    const s3 = new AWS.S3({
+      apiVersion: '2006-03-01',
+      params: { Bucket: BUCKET }
+    });
+
+    const key = "uploads/" + Date.now() + "-" + f.name;
+    s3.putObject({
+      Key: key,
+      Body: f,
+      ContentType: f.type || "application/octet-stream"
+    }, function(err, data) {
+      if (err) {
+        appendLog("Upload failed: " + err, "error");
+        status.innerText = "Upload failed: see logs";
+        status.style.color = "#ef4444";
+      } else {
+        appendLog("Upload complete: " + key, "success");
+        status.innerText = "Upload succeeded: " + key;
+        status.style.color = "#22c55e";
+      }
+    });
+  }
+
+  uploadBtn.addEventListener('click', function() {
+    getTemporaryCredentials(uploadFileWithV2);
+  });
+</script>
+
+</body>
+</html>
