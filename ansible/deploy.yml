@@ -1,0 +1,14 @@
+- hosts: localhost
+  connection: local
+  tasks:
+    - name: Apply k8s manifests
+      shell: |
+        kubectl apply -f ../k8s/deployment.yaml
+        kubectl apply -f ../k8s/cronjob-dlq-retry.yaml
+        kubectl apply -f ../k8s/service.yaml
+        kubectl apply -f ../k8s/file-processing-sa.yaml
+      environment:
+        KUBECONFIG: "{{ lookup('env','HOME') }}/.kube/config"
+      register: result
+    - debug:
+        var: result.stdout
