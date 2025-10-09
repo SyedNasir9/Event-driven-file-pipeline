@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dlq-retry
+spec:
+  schedule: "*/10 * * * *"   # every 10 minutes
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: file-processor-sa  
+          containers:
+          - name: dlq-retry
+            image: 486909041565.dkr.ecr.ap-south-1.amazonaws.com/k8s-event-processor:latest
+            command: ["python", "/app/retry_dlq.py"]
+            env:
+            - name: AWS_REGION
+              value: "ap-south-1"
+            - name: DLQ_URL
+              value: "https://sqs.ap-south-1.amazonaws.com/486909041565/file-processing-dlq"
+            - name: SQS_URL
+              value: "https://sqs.ap-south-1.amazonaws.com/486909041565/file-processing-queue"
+            - name: MAX_MESSAGES
+              value: "10"
+          restartPolicy: OnFailure

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: file-processor
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: file-processor
+  template:
+    metadata:
+      labels:
+        app: file-processor
+    spec:
+      tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+      containers:
+      - name: processor
+        image: 486909041565.dkr.ecr.ap-south-1.amazonaws.com/k8s-event-processor:latest
+        imagePullPolicy: Always
+        env:
+        - name: AWS_REGION
+          value: "ap-south-1"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: aws-creds
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: aws-creds
+              key: AWS_SECRET_ACCESS_KEY
+        - name: SQS_URL
+          value: "https://sqs.ap-south-1.amazonaws.com/486909041565/file-processing-queue"
+        - name: S3_BUCKET
+          value: "k8s-event-files-syed"
+        - name: DDB_TABLE
+          value: "ProcessedFiles"
+        - name: POLL_WAIT
+          value: "5"
+        - name: SNS_TOPIC_ARN   
+          value: "arn:aws:sns:ap-south-1:486909041565:k8s-event-alerts"
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
