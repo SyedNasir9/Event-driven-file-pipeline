@@ -1,36 +1,33 @@
----
 - hosts: localhost
   connection: local
   vars:
     image_url: "486909041565.dkr.ecr.ap-south-1.amazonaws.com/k8s-event-processor:latest"
+    vault_path: "secret/aws-creds"
+
   tasks:
-
-    - name: Pull Docker image
+    - name: Vault secrets, Trivy scan, Docker pull, and Kubernetes deploy
       shell: |
+        # Pull AWS creds from Vault
+        export AWS_ACCESS_KEY_ID=$(vault kv get -field=AWS_ACCESS_KEY_ID {{ vault_path }})
+        export AWS_SECRET_ACCESS_KEY=$(vault kv get -field=AWS_SECRET_ACCESS_KEY {{ vault_path }})
+
+        # Pull Docker image
         docker pull {{ image_url }}
-      register: docker_pull
-    - debug:
-        var: docker_pull.stdout
 
-    - name: Run Trivy basic vulnerability scan
-      shell: |
+        # Run Trivy basic vulnerability scan
         trivy image --severity HIGH,CRITICAL {{ image_url }}
-      register: trivy_scan
-      ignore_errors: yes
+        if [ $? -ne 0 ]; then
+          echo "Trivy scan detected HIGH/CRITICAL vulnerabilities. Deployment aborted!"
+          exit 1
+        fi
 
-    - name: Fail if Trivy found vulnerabilities
-      fail:
-        msg: "Trivy scan detected HIGH/CRITICAL vulnerabilities. Deployment aborted!"
-      when: trivy_scan.rc != 0
-
-    - name: Apply Kubernetes manifests
-      shell: |
+        # Apply Kubernetes manifests
         kubectl apply -f ../k8s/deployment.yaml
         kubectl apply -f ../k8s/cronjob-dlq-retry.yaml
         kubectl apply -f ../k8s/service.yaml
         kubectl apply -f ../k8s/file-processing-sa.yaml
       environment:
-        KUBECONFIG: "{{ lookup('env','HOME') }}/.kube/config"
+        KUBECONFIG: "{{ lookup('env','HOME') }}/.kube/config }}"
       register: deploy_result
 
     - debug:
