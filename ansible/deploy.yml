@@ -1,7 +1,29 @@
+---
 - hosts: localhost
   connection: local
+  vars:
+    image_url: "486909041565.dkr.ecr.ap-south-1.amazonaws.com/k8s-event-processor:latest"
   tasks:
-    - name: Apply k8s manifests
+
+    - name: Pull Docker image
+      shell: |
+        docker pull {{ image_url }}
+      register: docker_pull
+    - debug:
+        var: docker_pull.stdout
+
+    - name: Run Trivy basic vulnerability scan
+      shell: |
+        trivy image --severity HIGH,CRITICAL {{ image_url }}
+      register: trivy_scan
+      ignore_errors: yes
+
+    - name: Fail if Trivy found vulnerabilities
+      fail:
+        msg: "Trivy scan detected HIGH/CRITICAL vulnerabilities. Deployment aborted!"
+      when: trivy_scan.rc != 0
+
+    - name: Apply Kubernetes manifests
       shell: |
         kubectl apply -f ../k8s/deployment.yaml
         kubectl apply -f ../k8s/cronjob-dlq-retry.yaml
@@ -9,6 +31,7 @@
         kubectl apply -f ../k8s/file-processing-sa.yaml
       environment:
         KUBECONFIG: "{{ lookup('env','HOME') }}/.kube/config"
-      register: result
+      register: deploy_result
+
     - debug:
-        var: result.stdout
+        var: deploy_result.stdout
